@@ -61,12 +61,15 @@ make open    # відкрити дашборд у браузері
 
 | Сервіс | URL | Логін |
 |---|---|---|
-| **Grafana — дашборд** | http://localhost:3000/d/demo-service | не потрібен (anonymous Admin) |
+| **Grafana — RED дашборд** | http://localhost:3000/d/demo-service | не потрібен (anonymous Admin) |
+| **Grafana — USE дашборд (ресурси)** | http://localhost:3000/d/use-resources | не потрібен |
 | Grafana — головна | http://localhost:3000 | не потрібен |
 | Grafana — трейси (Tempo) | http://localhost:3000/explore | не потрібен |
 | Prometheus | http://localhost:9090 | — |
 | Demo-сервіс | http://localhost:8080 | — |
 | Tempo API | http://localhost:3200 | — |
+| cAdvisor (метрики контейнерів) | http://localhost:8081 | — |
+| node-exporter (метрики хоста) | http://localhost:9100/metrics | — |
 
 ## Як зайти на дашборд Grafana
 
@@ -113,7 +116,8 @@ curl localhost:8080/api/orders
 
 ## Ключові поняття для курсу
 
-- **RED-метрики**: Rate (`http_requests_total`), Errors (`status=~"5.."`), Duration (histogram + `histogram_quantile`).
+- **RED-метрики** (про сервіс, дашборд `demo-service`): Rate (`http_requests_total`), Errors (`status=~"5.."`), Duration (histogram + `histogram_quantile`).
+- **USE-метрики** (про ресурси, дашборд `use-resources`): **U**tilization — CPU/пам'ять контейнерів (cAdvisor: `container_cpu_usage_seconds_total`, `container_memory_usage_bytes`) і хоста (node-exporter: `node_cpu_seconds_total`, `node_memory_*`); **S**aturation — `node_load1`; **E**rrors — мережеві/дискові помилки. Плюс внутрішні метрики Go-процесу: `go_goroutines`, `process_cpu_seconds_total`, `process_resident_memory_bytes` (client_golang експонує їх автоматично). Кількість запущених контейнерів: `count(container_last_seen{name=~".+"})`.
 - **Pull-модель Prometheus**: сервіс лише експонує `/metrics`, Prometheus сам скрейпить кожні 5s.
 - **OTel SDK**: `TracerProvider` + OTLP exporter → Tempo; `otelhttp.NewHandler` створює server span на кожен запит, ручні спани (`tracer.Start`) — для внутрішньої роботи.
 - **Context propagation**: W3C `traceparent` заголовок — якщо додати другий сервіс, трейс "продовжиться" крізь нього.

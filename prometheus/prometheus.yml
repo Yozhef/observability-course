@@ -10,3 +10,13 @@ scrape_configs:
   - job_name: "prometheus"
     static_configs:
       - targets: ["localhost:9090"]
+
+  # метрики контейнерів (CPU/mem/network per container)
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+
+  # метрики хоста (CPU/mem/disk/load)
+  - job_name: "node"
+    static_configs:
+      - targets: ["node-exporter:9100"]
