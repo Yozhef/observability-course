@@ -51,7 +51,8 @@ services:
     ports:
       - "9100:9100"
     volumes:
-      - /:/host:ro,rslave
+      # без rslave — Docker Desktop на macOS його не підтримує
+      - /:/host:ro
 
   grafana:
     image: grafana/grafana:11.5.1
