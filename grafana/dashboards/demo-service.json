@@ -7,11 +7,31 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
     "to": "now"
+  },
+  "annotations": {
+    "list": [
+      {
+        "datasource": {
+          "type": "datasource",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "iconColor": "purple",
+        "name": "Deployments",
+        "target": {
+          "tags": [
+            "deployment"
+          ],
+          "type": "tags"
+        },
+        "type": "tags"
+      }
+    ]
   },
   "panels": [
     {
@@ -36,8 +56,7 @@
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0
+          "unit": "short"
         },
         "overrides": []
       }
@@ -65,7 +84,6 @@
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "decimals": 1,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -90,7 +108,7 @@
     {
       "id": 3,
       "type": "stat",
-      "title": "In-Flight Requests",
+      "title": "Availability SLI (checkout, 5m)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -104,13 +122,30 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "http_requests_in_flight"
+          "expr": "100 * checkout:availability:ratio_rate5m"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "decimals": 0
+          "unit": "percent",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 99.5
+              },
+              {
+                "color": "green",
+                "value": 99.9
+              }
+            ]
+          }
         },
         "overrides": []
       }
@@ -132,8 +167,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))",
-          "exemplar": true
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))"
         }
       ],
       "fieldConfig": {
@@ -206,7 +240,7 @@
     {
       "id": 7,
       "type": "timeseries",
-      "title": "Latency Percentiles by Endpoint (p50 / p95 / p99)",
+      "title": "p95 Latency by Endpoint (click exemplar → trace)",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -220,20 +254,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.50, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path))",
-          "legendFormat": "p50 {{path}}",
-          "exemplar": true
-        },
-        {
-          "refId": "B",
           "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path))",
           "legendFormat": "p95 {{path}}",
-          "exemplar": true
-        },
-        {
-          "refId": "C",
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, path))",
-          "legendFormat": "p99 {{path}}",
           "exemplar": true
         }
       ],
@@ -275,6 +297,250 @@
             "fillOpacity": 40
           }
         },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "SLO Burn Rate (checkout) — page при >14.4",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "checkout:burnrate5m",
+          "legendFormat": "burn 5m"
+        },
+        {
+          "refId": "B",
+          "expr": "checkout:burnrate1h",
+          "legendFormat": "burn 1h"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Product Funnel: started → paid → entitled (rate 5m)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(checkout_started_total[5m])",
+          "legendFormat": "checkout started"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(payment_succeeded_total[5m])",
+          "legendFormat": "payment succeeded"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(entitlement_granted_total[5m])",
+          "legendFormat": "entitlement granted"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 11,
+      "type": "timeseries",
+      "title": "Payment Outcomes: expected decline ≠ system error",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(payment_failed_total[5m])) by (kind)",
+          "legendFormat": "failed {{kind}}"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(payment_succeeded_total[5m])",
+          "legendFormat": "succeeded"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 15
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 12,
+      "type": "timeseries",
+      "title": "Orders Queue: depth і вік подій (p95)",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rabbitmq_queue_messages{queue=\"orders\"}",
+          "legendFormat": "queue depth"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, rate(event_age_seconds_bucket[5m]))",
+          "legendFormat": "event age p95 (s)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 13,
+      "type": "traces",
+      "title": "Slow Traces (>500ms)",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 39
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{duration > 500ms}",
+          "limit": 20,
+          "tableType": "traces"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 14,
+      "type": "traces",
+      "title": "Error Traces",
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 39
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "queryType": "traceql",
+          "query": "{status = error}",
+          "limit": 20,
+          "tableType": "traces"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "id": 15,
+      "type": "logs",
+      "title": "Recent Errors (Loki)",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "{service=~\"checkout|payment|worker\", level=\"error\"} | json"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "sortOrder": "Descending",
+        "wrapLogMessage": true
+      },
+      "fieldConfig": {
+        "defaults": {},
         "overrides": []
       }
     }
