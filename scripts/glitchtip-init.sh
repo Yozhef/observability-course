@@ -29,9 +29,9 @@ if [ -f .env ] && grep -q '^GLITCHTIP_DSN=.\+' .env; then
   exit 0
 fi
 
-echo "⏳ Чекаю на GlitchTip..."
+echo "⏳ Чекаю на GlitchTip (перший запуск: міграції можуть тривати кілька хвилин)..."
 ok=""
-for i in $(seq 1 60); do
+for i in $(seq 1 150); do
   if curl -sf "$BASE/_health/" > /dev/null 2>&1 || curl -sf "$BASE/api/0/" -o /dev/null 2>&1; then
     ok=1; break
   fi
