@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -516,14 +516,14 @@
     },
     {
       "id": 15,
-      "type": "logs",
-      "title": "Recent Errors (Loki)",
+      "type": "traces",
+      "title": "All Traces (OpenTelemetry, recent)",
       "datasource": {
-        "type": "loki",
-        "uid": "loki"
+        "type": "tempo",
+        "uid": "tempo"
       },
       "gridPos": {
-        "h": 9,
+        "h": 10,
         "w": 24,
         "x": 0,
         "y": 48
@@ -531,14 +531,12 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "{service=~\"checkout|payment|worker\", level=\"error\"} | json"
+          "queryType": "traceql",
+          "query": "{}",
+          "limit": 50,
+          "tableType": "traces"
         }
       ],
-      "options": {
-        "showTime": true,
-        "sortOrder": "Descending",
-        "wrapLogMessage": true
-      },
       "fieldConfig": {
         "defaults": {},
         "overrides": []
