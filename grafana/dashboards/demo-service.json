@@ -7,7 +7,7 @@
   ],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "refresh": "5s",
   "time": {
     "from": "now-15m",
@@ -460,7 +460,7 @@
     },
     {
       "id": 13,
-      "type": "traces",
+      "type": "table",
       "title": "Slow Traces (>500ms)",
       "datasource": {
         "type": "tempo",
@@ -478,7 +478,9 @@
           "queryType": "traceql",
           "query": "{duration > 500ms}",
           "limit": 20,
-          "tableType": "traces"
+          "spss": 3,
+          "tableType": "traces",
+          "filters": []
         }
       ],
       "fieldConfig": {
@@ -488,7 +490,7 @@
     },
     {
       "id": 14,
-      "type": "traces",
+      "type": "table",
       "title": "Error Traces",
       "datasource": {
         "type": "tempo",
@@ -506,7 +508,9 @@
           "queryType": "traceql",
           "query": "{status = error}",
           "limit": 20,
-          "tableType": "traces"
+          "spss": 3,
+          "tableType": "traces",
+          "filters": []
         }
       ],
       "fieldConfig": {
@@ -516,7 +520,7 @@
     },
     {
       "id": 15,
-      "type": "traces",
+      "type": "table",
       "title": "All Traces (OpenTelemetry, recent)",
       "datasource": {
         "type": "tempo",
@@ -532,9 +536,11 @@
         {
           "refId": "A",
           "queryType": "traceql",
-          "query": "{}",
+          "query": "{duration > 0s}",
           "limit": 50,
-          "tableType": "traces"
+          "spss": 3,
+          "tableType": "traces",
+          "filters": []
         }
       ],
       "fieldConfig": {
