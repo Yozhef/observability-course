@@ -1,0 +1,109 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: alert-sink
+    receivers:
+      - uid: alert-sink-webhook
+        type: webhook
+        settings:
+          url: http://alert-sink:8080/alerts
+          httpMethod: POST
+
+policies:
+  - orgId: 1
+    receiver: alert-sink
+    group_by: ["alertname"]
+    group_wait: 10s
+    group_interval: 30s
+    repeat_interval: 30m
+
+groups:
+  - orgId: 1
+    name: slo-burn
+    folder: SLO
+    interval: 30s
+    rules:
+      - uid: checkout-burn-fast
+        title: Checkout SLO fast burn (page)
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: page
+          team: checkout
+        annotations:
+          summary: "Checkout error budget burning >14.4x — monthly budget gone in ~2 days."
+          dashboard: "http://localhost:3000/d/demo-service"
+          runbook: "docs/runbooks/checkout-slo.md"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              expr: checkout:burnrate5m > 14.4 and checkout:burnrate1h > 14.4
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus }
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              reducer: last
+              expression: A
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { params: [0], type: gt }
+              datasource: { type: __expr__, uid: __expr__ }
+
+      - uid: checkout-burn-slow
+        title: Checkout SLO slow burn (ticket)
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: OK
+        labels:
+          severity: ticket
+          team: checkout
+        annotations:
+          summary: "Checkout error budget burning >6x for a sustained period."
+          dashboard: "http://localhost:3000/d/demo-service"
+          runbook: "docs/runbooks/checkout-slo.md"
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              editorMode: code
+              expr: checkout:burnrate30m > 6 and checkout:burnrate6h > 6
+              instant: true
+              range: false
+              datasource: { type: prometheus, uid: prometheus }
+          - refId: B
+            datasourceUid: __expr__
+            model:
+              refId: B
+              type: reduce
+              reducer: last
+              expression: A
+              datasource: { type: __expr__, uid: __expr__ }
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: B
+              conditions:
+                - evaluator: { params: [0], type: gt }
+              datasource: { type: __expr__, uid: __expr__ }

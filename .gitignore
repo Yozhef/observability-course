@@ -1,3 +1,4 @@
-tempo-data/
+.env
 *.log
 .DS_Store
+tempo-data/

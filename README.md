@@ -1,131 +1,150 @@
-# Observability Course — Demo Stack
+# AI-Native Observability — Demo Stack
 
-Локальний стек для демонстрації обзервабіліті: **Go-сервіс → Prometheus (метрики) → Grafana (дашборд) + OpenTelemetry → Tempo (трейси)**.
+Повний локальний стек для 3-денного курсу: **3 Go-сервіси → OTel Collector → Tempo (трейси), Prometheus (метрики + exemplars), Loki+Alloy (логи), GlitchTip (errors), RabbitMQ, PostgreSQL, Grafana (дашборди + алерти)**. Кожен урок курсу має свою `make`-команду, яка відтворює інцидент наживо.
 
-## Архітектура
-
-```
-                 ┌──────────────┐   scrape /metrics   ┌────────────┐
-  curl ──────▶   │ demo-service │ ◀────────────────── │ Prometheus │
-                 │  (Go, :8080) │                     │   :9090    │
-                 └──────┬───────┘                     └─────┬──────┘
-                        │ OTLP HTTP (трейси)                │ PromQL
-                        ▼                                   ▼
-                 ┌──────────────┐                     ┌────────────┐
-                 │    Tempo     │ ◀────── TraceQL ─── │  Grafana   │
-                 │ :4318 / :3200│                     │   :3000    │
-                 └──────────────┘                     └────────────┘
-```
-
-## Структура проєкту
-
-```
-observability-course/
-├── docker-compose.yml
-├── app/                    # Go-сервіс: 3 ендпоінти + /metrics + OTel
-│   ├── main.go
-│   ├── go.mod
-│   └── Dockerfile
-├── prometheus/prometheus.yml
-├── tempo/tempo.yaml
-└── grafana/
-    ├── provisioning/
-    │   ├── datasources/datasources.yml   # Prometheus + Tempo
-    │   └── dashboards/dashboards.yml
-    └── dashboards/demo-service.json      # готовий дашборд
-```
-
-## Швидкий старт
-
-> **Передумова:** Docker-демон має бути запущений. Якщо бачиш помилку
-> `failed to connect to the docker API at unix:///.../docker.sock` — виконай `open -a Docker`
-> (Docker Desktop), дочекайся статусу "running" і повтори команду.
+## Одна команда
 
 ```bash
 make demo
 ```
 
-Ця команда сама: підніме стек → дочекається сервісу → нажене ~300 запитів → відкриє Grafana одразу на дашборді → крутитиме навантаження ~24 RPS протягом 2 хвилин.
+Вона: перевірить Docker → збілдить і підніме всі ~18 контейнерів → дочекається готовності → автоматично налаштує GlitchTip (user/org/project/DSN) → нажене стартові метрики і трейси → відкриє Grafana на дашборді → крутитиме навантаження 5 хвилин.
 
-Або по кроках:
+> **Вимоги:** Docker Desktop запущений, 6-8 GB RAM для Docker, вільні порти 3000, 3100, 3200, 5433, 5672, 8000, 8080-8083, 8090, 9090, 9100, 15672.
 
-```bash
-make up      # docker compose up -d --build
-make load    # 2 хв навантаження, середній RPS ~24 (>15)
-make open    # відкрити дашборд у браузері
+## Архітектура
+
+```
+ curl ──▶ checkout :8080 ──HTTP(traceparent)──▶ payment :8081 ──▶ [provider stub]
+             │  │  │                                │
+             │  │  └─▶ RabbitMQ ──▶ worker ──▶ PostgreSQL (entitlements)
+             │  └────▶ PostgreSQL (orders)          │
+             │                                      │
+             └── traces ─▶ OTel Collector ─▶ Tempo ─┴─ service graph ─▶ Prometheus
+                 logs   ─▶ Alloy ─▶ Loki                      ▲
+                 errors ─▶ GlitchTip                          │ scrape /metrics
+                                                              │ (+ exemplars)
+                       Grafana ◀── дашборди, алерти, Explore ─┘
 ```
 
-Інші команди: `make load-forever` (нескінченне навантаження), `make logs`, `make down`, `make clean` (з видаленням volume та образів).
+## Адреси
 
-## Доступи та URL
-
-| Сервіс | URL | Логін |
+| Що | URL | Доступ |
 |---|---|---|
-| **Grafana — RED дашборд** | http://localhost:3000/d/demo-service | не потрібен (anonymous Admin) |
-| **Grafana — USE дашборд (ресурси)** | http://localhost:3000/d/use-resources | не потрібен |
-| Grafana — головна | http://localhost:3000 | не потрібен |
-| Grafana — трейси (Tempo) | http://localhost:3000/explore | не потрібен |
+| **Grafana — RED дашборд** | http://localhost:3000/d/demo-service | без логіна |
+| **Grafana — USE дашборд** | http://localhost:3000/d/use-resources | без логіна |
+| Grafana — Alerting | http://localhost:3000/alerting/list | без логіна |
+| Grafana — Explore (Loki/Tempo) | http://localhost:3000/explore | без логіна |
+| **GlitchTip (errors)** | http://localhost:8000 | admin@course.local / course-demo-123 |
+| RabbitMQ management | http://localhost:15672 | course / course |
 | Prometheus | http://localhost:9090 | — |
-| Demo-сервіс | http://localhost:8080 | — |
-| Tempo API | http://localhost:3200 | — |
-| cAdvisor (метрики контейнерів) | http://localhost:8081 | — |
-| node-exporter (метрики хоста) | http://localhost:9100/metrics | — |
+| checkout / payment / worker | :8080 / :8081 / :8083 | — |
+| cAdvisor / node-exporter | :8082 / :9100 | — |
+| alert-sink (webhook echo) | :8090 | `make alerts-log` |
 
-## Як зайти на дашборд Grafana
+## Уроки по днях
 
-1. Відкрий **http://localhost:3000/d/demo-service** — це прямо дашборд **"Demo Service — RED Metrics"** (логін/пароль не потрібні, форму входу вимкнено).
-2. Якщо відкрив головну (`localhost:3000`): зліва **Dashboards → Demo Service — RED Metrics**.
-3. Автооновлення вже ввімкнене (5s), діапазон — останні 15 хвилин.
-4. Трейси: зліва **Explore** → у селекторі datasource вибери **Tempo** → **Search** → service `demo-service` → Run query. Відкрий будь-який трейс `/api/orders` — побачиш вкладені `db.query` спани.
+Між будь-якими демо повертай стек у baseline: **`make reset`**.
 
-## Ендпоінти
+### День 1 — Logs, Errors, RCA
 
-- `GET /api/hello` — швидкий, завжди 200
-- `GET /api/users` — cache lookup + 1 "запит у БД", ~10% помилок 500
-- `GET /api/orders` — 2 "запити в БД" (повільніший), помилки теж бувають
-- `GET /metrics` — Prometheus-метрики
-- `GET /healthz` — healthcheck
+| Демо | Команда | Що показувати |
+|---|---|---|
+| Біль grep-а | `LOG_FORMAT=text make up` → `make incident-day1` → `docker compose logs checkout \| grep -i error` | час на секундомір |
+| Той самий інцидент у LogQL | Grafana → Explore → Loki: `{service="checkout"} \| json \| level="error"` | 30 секунд проти хвилин |
+| Історія операції | `{service=~".+"} \| json \| correlation_id="checkout-<id>"` | lifecycle з усіх сервісів |
+| Логи як графік | `sum(count_over_time({service="checkout"} \| json \| level="error" [1m]))` | місток до метрик |
+| Перший Issue | `make incident-day1` → GlitchTip | push-модель error tracking |
+| Release + Regression | `make deploy-bad` → `make deploy-fix` → знову `make deploy-bad` | Regression badge, annotation |
+| Timeline із джерел | вивід deploy-bad + GlitchTip timestamps + Loki | кожен рядок має джерело |
 
-## Скрипт навантаження (щоб побачити метрики)
+### День 2 — Metrics, SLO, Alerting
 
-Скрипт `load.sh` розкидає запити по трьох ендпоінтах паралельно і тримає **середній RPS вище 15** (за замовчуванням ~24 RPS протягом 2 хвилин):
+| Демо | Команда | Що показувати |
+|---|---|---|
+| Шлях метрики | `curl -s localhost:8080/metrics \| grep http_requests` → Prometheus Targets | pull-модель |
+| Cardinality-вибух | `make cardinality-bomb` | TSDB head series росте |
+| RED під навантаженням | `./load.sh 300 30 --profile degradation` | Rate стабільний, Errors/p95 ростуть |
+| Deployment annotation | `make deploy-bad` / `make deploy-fix` | лінія на графіку = «що змінилось» |
+| USE наживо | `make chaos-cpu` (потім `make chaos-cpu-off`) | черга росте раніше за p95 |
+| SLO burn → алерт | `make incident-day2` → Alerting → `make alerts-log` | Normal→Pending→Firing→webhook |
+| Exemplars | RED дашборд → ромбики на p95 → клік → Tempo | з агрегату в конкретний trace |
 
-```bash
-./load.sh            # 120 секунд, ~24 RPS
-./load.sh 300 40     # 5 хвилин, ~40 RPS
-make load            # те саме, що ./load.sh 120 24
-make load-forever    # нескінченно, поки не зупиниш Ctrl+C
+Recording rules і burn-rate правила: `prometheus/rules.yml`, `grafana/provisioning/alerting/alerting.yml`. Product-метрики: `checkout_started_total`, `payment_succeeded_total`, `payment_failed_total{kind}`, `entitlement_granted_total`.
+
+### День 3 — Distributed Tracing, MCP
+
+| Демо | Команда | Що показувати |
+|---|---|---|
+| Перший waterfall | `curl localhost:8080/api/checkout` → Tempo | 4 сервіси в одному trace |
+| Sequential vs parallel | `make parallel-off` / `make parallel-on` | 1.5s → 700ms, critical path |
+| traceparent наживо | `curl -v localhost:8080/api/checkout` | header + той самий trace_id у логах |
+| Зламаний propagation | `make break-propagation` / `make fix-propagation` | два trace замість одного |
+| Context через RabbitMQ | RabbitMQ UI → message headers | traceparent у headers |
+| Consumer lag | `make incident-3` → `make workers-back` | queue depth, broker-wait span |
+| N+1 | `make nplus1` → Tempo, обидва traces | драбинка vs один JOIN |
+| Pool exhaustion | `make incident-2` | db.acquire_connection 3s, query 8ms |
+| Provider degradation | `make incident-1` | Кейс 1: RED→Trace→Logs→Service Graph |
+| Service Graph | Grafana → Explore → Tempo → Service Graph | topology з трейсів |
+| Повний цикл | p95 → exemplar → trace → Logs for this span | без copy-paste |
+| Sampling у Collector | `make collector-sample-20` / `collector-sample-100` | політика без зміни коду |
+| AI-розслідування | `make mcp-token` → підключи агента → `make incident-1` | evidence-based investigation |
+
+## Усі команди
+
+```
+make demo                 # ОДНА КОМАНДА: все підняти + налаштувати + нагнати дані
+make up / down / clean    # старт / стоп / повне прибирання (з volume)
+make reset                # baseline між демо (вимкнути chaos, повернути worker)
+make load                 # 2 хв ~24 RPS   |  make load-forever
+./load.sh 300 40 --profile spike|degradation --endpoint orders|checkout|...
+make incident-day1        # День 1: помилки+затримки для logs/errors демо
+make deploy-bad|deploy-fix# реліз з регресією / відкат (+annotation, +release)
+make incident-day2        # День 2: SLO burn → живий алерт у alert-sink
+make cardinality-bomb     # День 2: антидемо high-cardinality
+make chaos-cpu|chaos-mem  # День 2: USE-демо
+make incident-1|2|3       # День 3: provider / pool / consumer lag
+make workers-back         # повернути worker після incident-3
+make break-propagation    # День 3: антидемо (fix-propagation — назад)
+make parallel-on|off      # День 3: critical path демо
+make nplus1               # День 3: N+1 trace
+make collector-sample-20  # День 3: sampling без зміни коду
+make mcp-token            # День 3: read-only токен для Grafana MCP
+make alerts-log / logs    # повідомлення алертів / логи застосунків
 ```
 
-У кінці скрипт друкує фактичний середній RPS. Поки він працює — відкрий дашборд і дивись, як наповнюються графіки (панель "Requests per Second by Endpoint" покаже ~8 RPS на кожен з 3 ендпоінтів = ~24 сумарно).
+## Fault injection (для власних сценаріїв)
 
-Разові виклики руками:
+Кожен сервіс має runtime-ручки без рестартів:
 
 ```bash
-curl localhost:8080/api/hello
-curl localhost:8080/api/users
-curl localhost:8080/api/orders
+curl "localhost:8080/admin/chaos?error_rate=0.3&delay_ms=500"     # checkout
+curl "localhost:8081/admin/chaos?provider_error_rate=0.5"          # payment
+curl "localhost:8080/admin/chaos?pool_max=2&query_delay_ms=200"    # pool демо
+curl "localhost:8080/admin/reset"                                  # скинути
 ```
 
-## Що дивитись
+Параметри: `error_rate, delay_ms, query_delay_ms, pool_max, provider_delay_ms, provider_error_rate, retry_storm, parallel, break_propagation, cardinality, cpu_burn, mem_mb` (bool: `on/off`).
 
-1. **Grafana → Dashboards → "Demo Service — RED Metrics"** — RPS, error rate, p50/p95/p99, статус-коди.
-2. **Prometheus → Graph** — спробуй PromQL вручну:
-   `rate(http_requests_total[1m])`, `histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))`.
-3. **Grafana → Explore → Tempo** — вибери Search, service `demo-service`. Відкрий трейс `/api/orders`: побачиш server span + два вкладені `db.query` спани; у трейсах з 500 — записана помилка.
+## Troubleshooting
 
-## Ключові поняття для курсу
+- **`failed to connect to the docker API`** — Docker Desktop не запущений: `open -a Docker`, дочекайся "running".
+- **GlitchTip не налаштувався автоматично** — скрипт надрукує ручну інструкцію (2 хв): зареєструйся на http://localhost:8000, створи project (Go), поклади DSN у `.env` як `GLITCHTIP_DSN=http://<key>@glitchtip:8000/<id>`, потім `docker compose up -d checkout payment worker`. Все інше працює і без GlitchTip.
+- **Мало RAM** — GlitchTip можна вимкнути: `docker compose stop glitchtip glitchtip-worker glitchtip-migrate glitchtip-postgres glitchtip-redis`.
+- **Порти зайняті** — подивись таблицю адрес і звільни порт або зміни мапінг у compose.
+- **Демо «залипло»** — `make reset` повертає baseline; якщо не допомогло — `make down && make up`.
 
-- **RED-метрики** (про сервіс, дашборд `demo-service`): Rate (`http_requests_total`), Errors (`status=~"5.."`), Duration (histogram + `histogram_quantile`).
-- **USE-метрики** (про ресурси, дашборд `use-resources`): **U**tilization — CPU/пам'ять контейнерів (cAdvisor: `container_cpu_usage_seconds_total`, `container_memory_usage_bytes`) і хоста (node-exporter: `node_cpu_seconds_total`, `node_memory_*`); **S**aturation — `node_load1`; **E**rrors — мережеві/дискові помилки. Плюс внутрішні метрики Go-процесу: `go_goroutines`, `process_cpu_seconds_total`, `process_resident_memory_bytes` (client_golang експонує їх автоматично). Кількість запущених контейнерів: `count(container_last_seen{name=~".+"})`.
-- **Pull-модель Prometheus**: сервіс лише експонує `/metrics`, Prometheus сам скрейпить кожні 5s.
-- **OTel SDK**: `TracerProvider` + OTLP exporter → Tempo; `otelhttp.NewHandler` створює server span на кожен запит, ручні спани (`tracer.Start`) — для внутрішньої роботи.
-- **Context propagation**: W3C `traceparent` заголовок — якщо додати другий сервіс, трейс "продовжиться" крізь нього.
+## Структура
 
-## Можливі наступні кроки курсу
-
-- Додати другий сервіс і показати розподілений трейс.
-- Exemplars: зв'язати histogram-метрики з трейсами (кнопка "trace" прямо з графіка латентності).
-- OTel Collector між сервісом і Tempo (batching, sampling, розгалуження на кілька бекендів).
-- Loki для логів → повна тріада metrics/logs/traces в одній Grafana.
-- Alerting: правило в Prometheus на error rate > 5%.
+```
+app/                    # Go: cmd/{checkout,payment,worker} + internal/{obs,httpx,events,db}
+docker-compose.yml      # весь стек
+prometheus/             # scrape + recording rules (SLI/burn rate)
+tempo/                  # + metrics_generator (service graph)
+otel-collector/         # otlp → sampler → tempo
+loki/ alloy/            # логи контейнерів
+grafana/provisioning/   # datasources (cross-links), alerting (burn-rate), dashboards
+db/init.sql             # orders / order_items / entitlements
+scripts/                # glitchtip-init, mcp-token
+docs/                   # expansion-plan, gamma-брифи, runbooks
+```

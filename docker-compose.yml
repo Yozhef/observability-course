@@ -1,21 +1,84 @@
+x-app-env: &app-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+  POSTGRES_DSN: postgres://course:course@postgres:5432/course?sslmode=disable
+  RABBITMQ_URL: amqp://course:course@rabbitmq:5672/
+  VERSION: ${VERSION:-v1.0.0}
+  GLITCHTIP_DSN: ${GLITCHTIP_DSN:-}
+  LOG_FORMAT: ${LOG_FORMAT:-json}
+
 services:
-  app:
+  # ---------- application (Day 1-3) ----------
+  checkout:
     build: ./app
-    container_name: demo-service
+    image: obscourse-app
+    container_name: checkout
+    entrypoint: ["/bin/checkout"]
     ports:
       - "8080:8080"
     environment:
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318
-    depends_on:
-      - tempo
+      <<: *app-env
+      REGRESSION: ${REGRESSION:-off}
+    depends_on: [postgres, rabbitmq, otel-collector, payment]
 
-  prometheus:
-    image: prom/prometheus:v3.1.0
-    container_name: prometheus
+  payment:
+    image: obscourse-app
+    build: ./app
+    container_name: payment
+    entrypoint: ["/bin/payment"]
     ports:
-      - "9090:9090"
+      - "8081:8081"
+    environment:
+      <<: *app-env
+    depends_on: [otel-collector]
+
+  worker:
+    image: obscourse-app
+    build: ./app
+    container_name: worker
+    entrypoint: ["/bin/worker"]
+    ports:
+      - "8083:8083"
+    environment:
+      <<: *app-env
+    depends_on: [postgres, rabbitmq, otel-collector]
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_USER: course
+      POSTGRES_PASSWORD: course
+      POSTGRES_DB: course
+    ports:
+      - "5433:5432"
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - pg-data:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: course
+      RABBITMQ_DEFAULT_PASS: course
+    ports:
+      - "5672:5672"
+      - "15672:15672"   # management UI
+      - "15692:15692"   # prometheus plugin
+    volumes:
+      - ./rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+
+  # ---------- telemetry pipeline ----------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    container_name: otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      SAMPLE_PERCENT: ${SAMPLE_PERCENT:-100}
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    depends_on: [tempo]
 
   tempo:
     image: grafana/tempo:2.7.0
@@ -24,25 +87,101 @@ services:
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     ports:
       - "3200:3200"   # tempo HTTP API (used by Grafana)
-      - "4318:4318"   # OTLP HTTP receiver
     volumes:
       - ./tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
       - tempo-data:/var/tempo
+    depends_on: [prometheus]
 
-  # USE-метрики контейнерів: CPU, пам'ять, мережа кожного контейнера
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--web.enable-remote-write-receiver"
+      - "--enable-feature=exemplar-storage"
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules.yml:/etc/prometheus/rules.yml:ro
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: loki
+    user: "0"
+    command: ["-config.file=/etc/loki/loki.yaml"]
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+
+  alloy:
+    image: grafana/alloy:v1.5.1
+    container_name: alloy
+    command: ["run", "/etc/alloy/config.alloy", "--server.http.listen-addr=0.0.0.0:12345"]
+    volumes:
+      - ./alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on: [loki]
+
+  # ---------- error tracking (Day 1) ----------
+  glitchtip-postgres:
+    image: postgres:16-alpine
+    container_name: glitchtip-postgres
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: glitchtip
+      POSTGRES_DB: glitchtip
+    volumes:
+      - glitchtip-pg:/var/lib/postgresql/data
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    container_name: glitchtip-redis
+
+  glitchtip:
+    image: glitchtip/glitchtip:v4.2
+    container_name: glitchtip
+    environment: &glitchtip-env
+      DATABASE_URL: postgres://glitchtip:glitchtip@glitchtip-postgres:5432/glitchtip
+      REDIS_URL: redis://glitchtip-redis:6379/0
+      SECRET_KEY: course-demo-secret-key-not-for-prod
+      EMAIL_URL: consolemail://
+      GLITCHTIP_DOMAIN: http://localhost:8000
+      ENABLE_OPEN_USER_REGISTRATION: "True"
+      CELERY_WORKER_AUTOSCALE: "1,1"
+    ports:
+      - "8000:8000"
+    depends_on: [glitchtip-postgres, glitchtip-redis, glitchtip-migrate]
+
+  glitchtip-worker:
+    image: glitchtip/glitchtip:v4.2
+    container_name: glitchtip-worker
+    command: ["./bin/run-celery-with-beat.sh"]
+    environment: *glitchtip-env
+    depends_on: [glitchtip-postgres, glitchtip-redis, glitchtip-migrate]
+
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:v4.2
+    container_name: glitchtip-migrate
+    command: ["./manage.py", "migrate"]
+    environment: *glitchtip-env
+    depends_on: [glitchtip-postgres, glitchtip-redis]
+
+  # ---------- resources (Day 2, USE) ----------
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:v0.49.1
     container_name: cadvisor
     privileged: true
     ports:
-      - "8081:8080"
+      - "8082:8080"
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
 
-  # USE-метрики хоста (Linux VM Docker Desktop): CPU, пам'ять, диск, load
   node-exporter:
     image: prom/node-exporter:v1.8.2
     container_name: node-exporter
@@ -54,6 +193,16 @@ services:
       # без rslave — Docker Desktop на macOS його не підтримує
       - /:/host:ro
 
+  # ---------- alerting sink (Day 2) ----------
+  alert-sink:
+    image: mendhak/http-https-echo:34
+    container_name: alert-sink
+    environment:
+      HTTP_PORT: "8080"
+    ports:
+      - "8090:8080"
+
+  # ---------- UI ----------
   grafana:
     image: grafana/grafana:11.5.1
     container_name: grafana
@@ -62,13 +211,15 @@ services:
     environment:
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-      - GF_AUTH_DISABLE_LOGIN_FORM=true
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-    depends_on:
-      - prometheus
-      - tempo
+    depends_on: [prometheus, tempo, loki]
 
 volumes:
   tempo-data:
+  loki-data:
+  pg-data:
+  glitchtip-pg:

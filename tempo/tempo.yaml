@@ -18,6 +18,23 @@ storage:
     wal:
       path: /var/tempo/wal
 
+# Day 3: service graph + span metrics are generated FROM traces
+# and remote-written into Prometheus.
+metrics_generator:
+  registry:
+    external_labels:
+      source: tempo
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+
+overrides:
+  defaults:
+    metrics_generator:
+      processors: [service-graphs, span-metrics]
+
 compactor:
   compaction:
     block_retention: 24h

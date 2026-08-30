@@ -154,23 +154,23 @@
     {
       "id": 8,
       "type": "timeseries",
-      "title": "demo-service internals: goroutines / CPU / RSS",
+      "title": "checkout internals: goroutines / CPU / RSS",
       "datasource": { "type": "prometheus", "uid": "prometheus" },
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
       "targets": [
         {
           "refId": "A",
-          "expr": "go_goroutines{job=\"demo-service\"}",
+          "expr": "go_goroutines{job=\"checkout\"}",
           "legendFormat": "goroutines"
         },
         {
           "refId": "B",
-          "expr": "rate(process_cpu_seconds_total{job=\"demo-service\"}[1m])",
+          "expr": "rate(process_cpu_seconds_total{job=\"checkout\"}[1m])",
           "legendFormat": "CPU (cores)"
         },
         {
           "refId": "C",
-          "expr": "process_resident_memory_bytes{job=\"demo-service\"} / 1024 / 1024",
+          "expr": "process_resident_memory_bytes{job=\"checkout\"} / 1024 / 1024",
           "legendFormat": "RSS (MiB)"
         }
       ],

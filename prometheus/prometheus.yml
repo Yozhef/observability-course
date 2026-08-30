@@ -1,11 +1,22 @@
 global:
   scrape_interval: 5s
-  evaluation_interval: 5s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules.yml
 
 scrape_configs:
-  - job_name: "demo-service"
+  - job_name: "checkout"
     static_configs:
-      - targets: ["app:8080"]
+      - targets: ["checkout:8080"]
+
+  - job_name: "payment"
+    static_configs:
+      - targets: ["payment:8081"]
+
+  - job_name: "worker"
+    static_configs:
+      - targets: ["worker:8083"]
 
   - job_name: "prometheus"
     static_configs:
@@ -20,3 +31,8 @@ scrape_configs:
   - job_name: "node"
     static_configs:
       - targets: ["node-exporter:9100"]
+
+  # черги RabbitMQ (queue depth, consumers) — Day 3 consumer lag
+  - job_name: "rabbitmq"
+    static_configs:
+      - targets: ["rabbitmq:15692"]

@@ -8,6 +8,11 @@ datasources:
     url: http://prometheus:9090
     isDefault: true
     editable: true
+    jsonData:
+      # Day 2/3: click an exemplar diamond on a histogram panel -> jump to the trace
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
 
   - name: Tempo
     uid: tempo
@@ -16,7 +21,31 @@ datasources:
     url: http://tempo:3200
     editable: true
     jsonData:
-      tracesToMetrics:
-        datasourceUid: prometheus
+      # Day 3: service graph built from tempo metrics-generator data
       serviceMap:
         datasourceUid: prometheus
+      nodeGraph:
+        enabled: true
+      # Day 3: "Logs for this span" -> Loki query by trace_id
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        filterByTraceID: true
+        tags:
+          - key: service.name
+            value: service
+
+  - name: Loki
+    uid: loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    jsonData:
+      # Day 3: trace_id inside a JSON log line becomes a link to Tempo
+      derivedFields:
+        - name: TraceID
+          matcherRegex: '"trace_id":"(\w+)"'
+          url: "$${__value.raw}"
+          datasourceUid: tempo

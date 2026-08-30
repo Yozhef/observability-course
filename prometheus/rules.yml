@@ -1,0 +1,37 @@
+# SLO: 99.9% of /api/checkout requests succeed (rolling 30d).
+# Error budget = 0.1% -> burn rate = error_ratio / 0.001.
+groups:
+  - name: slo-checkout
+    interval: 15s
+    rules:
+      # --- SLI: error ratio over several windows ---
+      - record: checkout:error_ratio:rate5m
+        expr: |
+          sum(rate(http_requests_total{job="checkout",path="/api/checkout",status=~"5.."}[5m]))
+          / sum(rate(http_requests_total{job="checkout",path="/api/checkout"}[5m]))
+      - record: checkout:error_ratio:rate30m
+        expr: |
+          sum(rate(http_requests_total{job="checkout",path="/api/checkout",status=~"5.."}[30m]))
+          / sum(rate(http_requests_total{job="checkout",path="/api/checkout"}[30m]))
+      - record: checkout:error_ratio:rate1h
+        expr: |
+          sum(rate(http_requests_total{job="checkout",path="/api/checkout",status=~"5.."}[1h]))
+          / sum(rate(http_requests_total{job="checkout",path="/api/checkout"}[1h]))
+      - record: checkout:error_ratio:rate6h
+        expr: |
+          sum(rate(http_requests_total{job="checkout",path="/api/checkout",status=~"5.."}[6h]))
+          / sum(rate(http_requests_total{job="checkout",path="/api/checkout"}[6h]))
+
+      # --- burn rates (how fast the budget is burning) ---
+      - record: checkout:burnrate5m
+        expr: checkout:error_ratio:rate5m / 0.001
+      - record: checkout:burnrate30m
+        expr: checkout:error_ratio:rate30m / 0.001
+      - record: checkout:burnrate1h
+        expr: checkout:error_ratio:rate1h / 0.001
+      - record: checkout:burnrate6h
+        expr: checkout:error_ratio:rate6h / 0.001
+
+      # --- availability SLI (for dashboards) ---
+      - record: checkout:availability:ratio_rate5m
+        expr: 1 - checkout:error_ratio:rate5m
