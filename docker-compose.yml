@@ -149,6 +149,7 @@ services:
       SECRET_KEY: course-demo-secret-key-not-for-prod
       EMAIL_URL: consolemail://
       GLITCHTIP_DOMAIN: http://localhost:8000
+      PORT: "8000"   # uwsgi всередині контейнера за замовчуванням слухає 8080
       ENABLE_OPEN_USER_REGISTRATION: "True"
       CELERY_WORKER_AUTOSCALE: "1,1"
     ports:
