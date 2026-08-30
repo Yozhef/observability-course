@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -18,11 +19,24 @@ const loggerKey ctxKey = 1
 // NewLogger builds the root logger. LOG_FORMAT=text switches to the "bad old days"
 // unstructured format used in the Day 1 grep demo; default is structured JSON.
 func NewLogger(service, version string) *slog.Logger {
+	opts := &slog.HandlerOptions{
+		Level: slog.LevelDebug,
+		// slog за замовчуванням пише "ERROR"/"INFO" — нормалізуємо в lowercase,
+		// щоб LogQL-запити курсу (level="error") працювали як на слайдах.
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			if a.Key == slog.LevelKey {
+				if lv, ok := a.Value.Any().(slog.Level); ok {
+					a.Value = slog.StringValue(strings.ToLower(lv.String()))
+				}
+			}
+			return a
+		},
+	}
 	var h slog.Handler
 	if os.Getenv("LOG_FORMAT") == "text" {
-		h = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+		h = slog.NewTextHandler(os.Stdout, opts)
 	} else {
-		h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})
+		h = slog.NewJSONHandler(os.Stdout, opts)
 	}
 	return slog.New(h).With(
 		"service", service,
